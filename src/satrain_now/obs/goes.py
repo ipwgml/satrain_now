@@ -21,9 +21,9 @@ from pansat.utils import (
     resample_data,
     get_resample_info
 )
+from pyresample.geometry import AreaDefinition
 from pansat.products.satellite.goes import (
     GOES16L1BRadiances,
-    GOES17L1BRadiances,
     GOES18L1BRadiances,
     GOES19L1BRadiances,
 )
@@ -91,7 +91,7 @@ def get_goes_lonlats(
     lon[~np.isfinite(lon)] = np.nan
     lat[~np.isfinite(lat)] = np.nan
 
-    return lon, lat
+    return lon.copy(), lat.copy()
 
 
 _RESAMPLE_INFO = {}
@@ -112,7 +112,7 @@ def get_resample_info_cached(dataset: xr.Dataset, domain):
     """
     global _RESAMPLE_INFO
     lons = dataset.longitude.data
-    lon_min, lon_max, n_lons = np.nanmin(lons), np.nanmin(lons), lons.size
+    lon_min, lon_max, n_lons = np.nanmin(lons), np.nanmax(lons), lons.size
     lats = dataset.latitude.data
     lat_min, lat_max, n_lats = np.nanmin(lats), np.nanmax(lats), lats.size
     key = (lon_min, lon_max, n_lons, lat_min, lat_max, n_lats)
@@ -123,7 +123,7 @@ def get_resample_info_cached(dataset: xr.Dataset, domain):
             domain,
             radius_of_influence=5e3
         )
-    _RESAMPLE_INFO.setdefault(key, get_resample_info(dataset, domain))
+    return _RESAMPLE_INFO[key]
 
 
 class GOESABIObservations:
@@ -182,7 +182,7 @@ class GOESABIObservations:
                     # Check if we can discard data.
                     lons_d, lats_d = domain.get_lonlats()
                     lon_min, lon_max = np.nanmin(lons_d), np.nanmax(lons_d)
-                    lat_min, lat_max = np.nanmin(lons_d), np.nanmax(lats_d)
+                    lat_min, lat_max = np.nanmin(lats_d), np.nanmax(lats_d)
                     mask = (
                         (lon_min <= lons) * (lons <= lon_max) *
                         (lat_min <= lats) * (lats <= lat_max)
@@ -225,7 +225,7 @@ SATELLITES = {
 
 def extract_goes_abi_observations(
         goes_satellite: GOESABIObservations,
-        domain: pyresample.goemetry.AreaDef,
+        domain: AreaDefinition,
         start_time: np.datetime64,
         end_time: np.datetime64,
         time_step: np.timedelta64,
@@ -247,9 +247,7 @@ def extract_goes_abi_observations(
         n_workers: The number of workers to use for the extraction.
     """
     output_file = Path(output_file)
-    from satrain_now.domains import get_domain
     times = np.arange(start_time, end_time + 0.5 * time_step, time_step)
-    print(times)
 
     compressor = Blosc(cname="zstd", clevel=4)
     encoding = {
@@ -258,6 +256,9 @@ def extract_goes_abi_observations(
             "dtype": "float32",
             "compressors": compressor
         },
+        "time": {
+            "dtype": "float32"
+        }
     }
 
     if 1 < n_workers:
@@ -353,7 +354,7 @@ def cli(
             satellite,
             list(SATELLITES.keys())
         )
-        return 1
+        raise SystemExit(1)
 
     domain = get_domain(domain)
     start_time = np.datetime64(start_time, "h").astype("datetime64[s]")

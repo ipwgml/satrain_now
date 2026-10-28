@@ -15,5 +15,5 @@ conda activate satrain_now
 ### Extract GOES Imagery
 
 ``` shell
-satrain_now extract_goes_obs goes_19 conus_small 2023-06-01 2023-06-02 goes.zarr
+satrain_now extract_goes_obs goes_16 conus_small 2023-06-01 2023-06-02 goes.zarr
 ```
