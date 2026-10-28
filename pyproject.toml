@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "setuptools-scm>=8"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "satrain_now"
@@ -9,13 +9,27 @@ description = "Benchmark dataset for satellite precipitation nowcasting and anal
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "cartopy",
+    "click",
+    "h5netcdf",
+    "matplotlib",
+    "numcodecs",
+    "pyresample>=1.27",
+    "s3fs",
+    "xarray",
+    "zarr>=3.0",
+    "jupyterlab",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
     "ruff>=0.4",
 ]
+
+[project.scripts]
+satrain_now = "satrain_now.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

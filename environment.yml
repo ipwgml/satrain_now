@@ -1,0 +1,15 @@
+name: satrain_now
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.10
+  - pyresample>=1.27
+  - pytest>=8
+  - ruff>=0.4
+  - setuptools>=68
+  - setuptools-scm>=8
+  - pip
+  - pip:
+      - -e .
+      - git+https://github.com/see-geo/pansat@refactoring
