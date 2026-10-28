@@ -260,12 +260,12 @@ def extract_goes_abi_observations(
             for time, task in tqdm(tasks, "Extracting GOES observations"):
                 try:
                     res = task.result()
-                    res["time"] = time
+                    res = res.expand_dims("time").assign_coords(time=np.array([time]))
                     if output_file.exists():
                         res.to_zarr(
                             output_file,
                             mode="a",
-                            append_dim="time"
+                            append_dim="time",
                         )
                     else:
                         res.to_zarr(
@@ -283,7 +283,7 @@ def extract_goes_abi_observations(
         for time in times:
             try:
                 res = goes_satellite.extract_observations(time, domain)
-                res["time"] = time
+                res = res.expand_dims("time").assign_coords(time=np.array([time]))
                 if output_file.exists():
                     res.to_zarr(
                         output_file,
@@ -340,15 +340,15 @@ def cli(
         return 1
 
     domain = get_domain(domain)
-    start_time = np.datetime64(start_time, "h")
-    end_time = np.datetime64(end_time, "h")
+    start_time = np.datetime64(start_time, "h").astype("datetime64[s]")
+    end_time = np.datetime64(end_time, "h").astype("datetime64[s]")
     output_file = Path(output_file)
     extract_goes_abi_observations(
         goes_satellite,
         domain,
         start_time,
         end_time,
-        time_step=np.timedelta64(10, "m"),
+        time_step=np.timedelta64(600, "s"),
         output_file=output_file,
         n_workers=n_workers
     )
