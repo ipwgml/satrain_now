@@ -150,7 +150,15 @@ class GOESABIObservations:
         for chan in range(1, 17):
             goes_l1b = self.pansat_class(channel=chan, region="F")
             try:
-                file_record = goes_l1b.find_files(time_range)[0]
+
+                file_records = goes_l1b.find_files(time_range)
+                date = nominal_time.astype("datetime64[s]")
+                time_diffs = [
+                    abs((date - rec.central_time.start).total_seconds())
+                    for rec in file_records
+                ]
+                file_record = file_records[np.argmin(time_diffs)]
+
                 with goes_l1b.open_remote(file_record) as data:
 
                     # Get projection properties.
@@ -241,6 +249,7 @@ def extract_goes_abi_observations(
     output_file = Path(output_file)
     from satrain_now.domains import get_domain
     times = np.arange(start_time, end_time + 0.5 * time_step, time_step)
+    print(times)
 
     compressor = Blosc(cname="zstd", clevel=4)
     encoding = {
@@ -252,7 +261,8 @@ def extract_goes_abi_observations(
     }
 
     if 1 < n_workers:
-        with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        pool = ProcessPoolExecutor(max_workers=n_workers)
+        try:
             tasks = [
                 (time, pool.submit(goes_satellite.extract_observations, time, domain))
                 for time in times
@@ -279,8 +289,14 @@ def extract_goes_abi_observations(
                         "Encoutered an error when extracting observations for %s.",
                         time
                     )
+        except KeyboardInterrupt:
+            LOGGER.warning("Interrupted, terminating worker processes.")
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            pool.shutdown(wait=False)
     else:
-        for time in times:
+        for time in tqdm(times, "Extracting GOES observations"):
             try:
                 res = goes_satellite.extract_observations(time, domain)
                 res = res.expand_dims("time").assign_coords(time=np.array([time]))

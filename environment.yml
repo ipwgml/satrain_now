@@ -7,6 +7,7 @@ dependencies:
   - pyresample>=1.27
   - pytest>=8
   - ruff>=0.4
+  - satpy
   - setuptools>=68
   - setuptools-scm>=8
   - pip
