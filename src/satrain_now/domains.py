@@ -37,7 +37,7 @@ conus = register_domain(
     "conus",
     create_area_def(
         area_id="conus",
-        description="Regular lat/lon grid w 0.05 degree resolution covering conus.",
+        description="Regular lat/lon grid w 0.05 degree resolution covering CONUS.",
         projection={"proj": "longlat", "datum": "WGS84"},
         resolution=0.05,
         area_extent=(-125.0, 25.0, -65.0, 50.0),
@@ -48,9 +48,20 @@ conus_small = register_domain(
     "conus_small",
     create_area_def(
         area_id="conus_small",
-        description="Regular lat/lon grid w 0.05 degree resolution covering a part of conus.",
+        description="Regular lat/lon grid w 0.05 degree resolution covering a part of CONUS.",
         projection={"proj": "longlat", "datum": "WGS84"},
         resolution=0.05,
         area_extent=(-100.0, 30.0, -90.0, 40.0),
+    ),
+)
+
+korea = register_domain(
+    "korea",
+    create_area_def(
+        area_id="korea",
+        description="Regular lat/lon grid w 0.05 degree resolution covering CONUS.",
+        projection={"proj": "longlat", "datum": "WGS84"},
+        resolution=0.05,
+        area_extent=(122.0, 32.0, 132, 42.0),
     ),
 )

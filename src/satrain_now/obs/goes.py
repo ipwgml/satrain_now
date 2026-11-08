@@ -23,15 +23,16 @@ from pansat.utils import (
 )
 from pyresample.geometry import AreaDefinition
 from pansat.products.satellite.goes import (
-    GOES16L1BRadiances,
-    GOES18L1BRadiances,
-    GOES19L1BRadiances,
+    l2b_goes_16_mcmip_f,
+    l2b_goes_18_mcmip_f,
+    l2b_goes_19_mcmip_f
 )
 
 from satrain_now.domains import get_domain
 
 
 LOGGER = logging.getLogger(__name__)
+
 
 @cache
 def get_goes_lonlats(
@@ -127,12 +128,22 @@ def get_resample_info_cached(dataset: xr.Dataset, domain):
 
 
 class GOESABIObservations:
+    """
+    An interface for extracting ABI L2B calibrated reflectances and brightness
+    temperatures from the different GOES satellites.
+    """
 
     def __init__(
             self,
-            pansat_class,
+            pansat_product,
             ):
-        self.pansat_class = pansat_class
+        """
+        Args:
+            pansat_product: The pansat product representing the GOES L2B MCMIP
+                product for the targeted GOES platform.
+        """
+        self.pansat_product = pansat_product
+
 
 
     def extract_observations(
@@ -141,85 +152,88 @@ class GOESABIObservations:
             domain,
             time_window: np.timedelta64 = np.timedelta64(5, "m")
     ):
+        """
+        Extract goes observations closes to the given nominal time and map
+        observations to the given domain.
+
+        Args:
+            nominal_time: The nominal time for which to extract the observations.
+
+        """
         time_range = TimeRange(
             nominal_time - np.timedelta64(180, "s"),
             nominal_time + np.timedelta64(180, "s")
         )
 
+        file_records = self.pansat_product.find_files(time_range)
+        date = nominal_time.astype("datetime64[s]")
+        time_diffs = [
+            abs((date - rec.central_time.start).total_seconds())
+            for rec in file_records
+        ]
+        file_record = file_records[np.argmin(time_diffs)]
+        data = xr.open_dataset(file_record.get().local_path)
+
+        # Get projection properties.
+        proj = data["goes_imager_projection"].attrs
+        x_0 = data.x.data[0]
+        x_1 = data.x.data[-1]
+        n_x = data.x.size
+        y_0 = data.y.data[0]
+        y_1 = data.y.data[-1]
+        n_y = data.y.size
+        lons, lats = get_goes_lonlats(
+            x_0, x_1, n_x,
+            y_0, y_1, n_y,
+            perspective_point_height=proj["perspective_point_height"],
+            longitude_of_projection_origin=proj["longitude_of_projection_origin"],
+            semi_major_axis=proj["semi_major_axis"],
+            semi_minor_axis=proj["semi_minor_axis"],
+            sweep_angle_axis=proj["sweep_angle_axis"]
+        )
+
+        # Check if we can discard data.
+        lons_d, lats_d = domain.get_lonlats()
+        lon_min, lon_max = np.nanmin(lons_d), np.nanmax(lons_d)
+        lat_min, lat_max = np.nanmin(lats_d), np.nanmax(lats_d)
+        mask = (
+            (lon_min <= lons) * (lons <= lon_max) *
+            (lat_min <= lats) * (lats <= lat_max)
+        )
+        inds = np.where(mask)
+        row_start = inds[0].min()
+        row_end = inds[0].max()
+        row_slice = slice(row_start, row_end)
+        col_start = inds[1].min()
+        col_end = inds[1].max()
+        col_slice = slice(col_start, col_end)
+
         all_obs = []
+
         for chan in range(1, 17):
-            goes_l1b = self.pansat_class(channel=chan, region="F")
-            try:
 
-                file_records = goes_l1b.find_files(time_range)
-                date = nominal_time.astype("datetime64[s]")
-                time_diffs = [
-                    abs((date - rec.central_time.start).total_seconds())
-                    for rec in file_records
-                ]
-                file_record = file_records[np.argmin(time_diffs)]
+            var = f"CMI_C{chan:02}"
+            obs = data[[f"CMI_C{chan:02}"]][{"x": col_slice, "y": row_slice}].compute()
+            obs["longitude"] = (("y", "x"), lons[row_slice, col_slice])
+            obs["latitude"] = (("y", "x"), lats[row_slice, col_slice])
 
-                with goes_l1b.open_remote(file_record) as data:
+            resample_info = get_resample_info_cached(obs, domain)
+            obs_r = resample_data(
+                obs[[var, "longitude", "latitude"]].compute(),
+                domain,
+                info=resample_info
+            )
+            obs_r = obs_r.rename({var: "obs"})
+            all_obs.append(obs_r)
 
-                    # Get projection properties.
-                    proj = data["goes_imager_projection"].attrs
-                    x_0 = data.x.data[0]
-                    x_1 = data.x.data[-1]
-                    n_x = data.x.size
-                    y_0 = data.y.data[0]
-                    y_1 = data.y.data[-1]
-                    n_y = data.y.size
-                    lons, lats = get_goes_lonlats(
-                        x_0, x_1, n_x,
-                        y_0, y_1, n_y,
-                        perspective_point_height=proj["perspective_point_height"],
-                        longitude_of_projection_origin=proj["longitude_of_projection_origin"],
-                        semi_major_axis=proj["semi_major_axis"],
-                        semi_minor_axis=proj["semi_minor_axis"],
-                        sweep_angle_axis=proj["sweep_angle_axis"]
-                    )
-
-                    # Check if we can discard data.
-                    lons_d, lats_d = domain.get_lonlats()
-                    lon_min, lon_max = np.nanmin(lons_d), np.nanmax(lons_d)
-                    lat_min, lat_max = np.nanmin(lats_d), np.nanmax(lats_d)
-                    mask = (
-                        (lon_min <= lons) * (lons <= lon_max) *
-                        (lat_min <= lats) * (lats <= lat_max)
-                    )
-                    inds = np.where(mask)
-                    row_start = inds[0].min()
-                    row_end = inds[0].max()
-                    row_slice = slice(row_start, row_end)
-                    col_start = inds[1].min()
-                    col_end = inds[1].max()
-                    col_slice = slice(col_start, col_end)
-
-                    data = data[["Rad"]][{"x": col_slice, "y": row_slice}]
-                    data["longitude"] = (("y", "x"), lons[row_slice, col_slice])
-                    data["latitude"] = (("y", "x"), lats[row_slice, col_slice])
-
-                    resample_info = get_resample_info_cached(data, domain)
-                    data_r = resample_data(
-                        data[["Rad", "longitude", "latitude"]].compute(),
-                        domain,
-                        info=resample_info
-                    )
-                    data_r = data_r.rename(Rad="obs")
-                    all_obs.append(data_r)
-            except IndexError:
-                LOGGER.warning(
-                    "No GOES ABI file found for %s.",
-                    nominal_time
-                )
         obs = xr.concat(all_obs, dim="channel")
         return obs
 
 
 SATELLITES = {
-    "goes_16": GOESABIObservations(GOES16L1BRadiances),
-    "goes_18": GOESABIObservations(GOES18L1BRadiances),
-    "goes_19": GOESABIObservations(GOES19L1BRadiances),
+    "goes_16": GOESABIObservations(l2b_goes_16_mcmip_f),
+    "goes_18": GOESABIObservations(l2b_goes_18_mcmip_f),
+    "goes_19": GOESABIObservations(l2b_goes_19_mcmip_f),
 }
 
 

@@ -6,7 +6,7 @@ The 'satrain_now' command line interface.
 """
 import click
 
-from satrain_now.obs import goes
+from satrain_now.obs import goes, gk2a
 
 @click.group()
 @click.version_option(version="0.0.1")
@@ -17,3 +17,4 @@ def main():
     pass
 
 main.add_command(goes.cli, name="extract_goes_obs")
+main.add_command(gk2a.cli, name="extract_gk2a_obs")
